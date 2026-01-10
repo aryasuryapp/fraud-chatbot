@@ -6,11 +6,43 @@ from typing import Optional
 import sqlite3
 import pandas as pd
 import os
+import logging
+import uuid
 from dotenv import load_dotenv
 from rag.retriever import Retriever
 
 # Load environment variables from .env file
 load_dotenv()
+
+# Configure logging with pretty formatting
+def setup_logger(name: str) -> logging.Logger:
+    """Setup a logger with pretty formatting."""
+    logger = logging.getLogger(name)
+    
+    # Get log level from environment or default to INFO
+    log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+    logger.setLevel(getattr(logging, log_level, logging.INFO))
+    
+    # Avoid duplicate handlers
+    if logger.handlers:
+        return logger
+    
+    # Create console handler with custom formatting
+    handler = logging.StreamHandler()
+    handler.setLevel(logging.DEBUG)
+    
+    # Simple, clean formatter
+    formatter = logging.Formatter(
+        fmt='%(levelname)s: %(message)s',
+        datefmt='%H:%M:%S'
+    )
+    
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    
+    return logger
+
+logger = setup_logger(__name__)
 
 
 class QAChain:
@@ -45,11 +77,11 @@ class QAChain:
         try:
             self.has_vector_store = self.retriever.load_vector_store()
             if not self.has_vector_store:
-                print("⚠️  Warning: No document embeddings found. RAG retrieval disabled.")
-                print("   Run 'python ingestion/load_docs.py' to create embeddings.")
+                logger.warning("No document embeddings found. RAG retrieval disabled.")
+                logger.info("Run 'python ingestion/load_docs.py' to create embeddings.")
         except Exception as e:
-            print(f"⚠️  Warning: Could not load vector store: {e}")
-            print("   The chatbot will work with database context only.")
+            logger.warning(f"Could not load vector store: {e}")
+            logger.info("The chatbot will work with database context only.")
         
         # Initialize LLM
         self._init_llm()
@@ -60,21 +92,21 @@ class QAChain:
             try:
                 from openai import OpenAI
                 self.llm = OpenAI()
-                print(f"Initialized OpenAI with model: {self.model_name}")
+                logger.info(f"Initialized OpenAI with model: {self.model_name}")
             except ImportError:
-                print("openai not installed. Run: pip install openai")
+                logger.error("openai not installed. Run: pip install openai")
         
         elif self.llm_provider == "anthropic":
             try:
                 import anthropic
                 self.llm = anthropic.Anthropic()
-                print(f"Initialized Anthropic with model: {self.model_name}")
+                logger.info(f"Initialized Anthropic with model: {self.model_name}")
             except ImportError:
-                print("anthropic not installed. Run: pip install anthropic")
+                logger.error("anthropic not installed. Run: pip install anthropic")
         
         elif self.llm_provider == "ollama":
-            print(f"Using Ollama with model: {self.model_name}")
-            print("Make sure Ollama is running locally")
+            logger.info(f"Using Ollama with model: {self.model_name}")
+            logger.info("Make sure Ollama is running locally")
     
     def _get_table_stats(self, conn) -> str:
         """Get useful aggregate statistics about the fraud dataset."""
@@ -113,7 +145,7 @@ class QAChain:
         
         return any(keyword in question_lower for keyword in specific_keywords)
     
-    def _generate_sql_query(self, question: str, schema: str) -> str:
+    def _generate_sql_query(self, question: str, schema: str, request_id: str = None) -> str:
         """Use LLM to generate SQL query from natural language question."""
         prompt = f"""Given this SQLite database schema:
 {schema}
@@ -133,7 +165,7 @@ IMPORTANT Requirements:
 SQL Query:"""
         
         try:
-            query = self._call_llm(prompt).strip()
+            query = self._call_llm(prompt, request_id).strip()
             # Clean up common formatting issues
             query = query.replace('```sql', '').replace('```', '').strip()
             # Remove any trailing semicolon and add LIMIT if missing
@@ -174,8 +206,9 @@ SQL Query:"""
         
         return True
     
-    def _get_db_context(self, query: str) -> str:
+    def _get_db_context(self, query: str, request_id: str = None) -> str:
         """Get relevant data from SQLite database with intelligent query generation."""
+        log_prefix = f"[{request_id}] " if request_id else ""
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
@@ -202,10 +235,10 @@ Dataset Statistics:
             
             # Detect if question needs specific data query
             if self._question_needs_db_query(query):
-                print("🔍 Generating SQL query for specific data...")
+                logger.debug(f"{log_prefix}Generating SQL query for specific data...")
                 
                 # Generate SQL query using LLM
-                sql_query = self._generate_sql_query(query, schema[0])
+                sql_query = self._generate_sql_query(query, schema[0], request_id)
                 
                 # Validate query for security
                 if self._is_safe_query(sql_query):
@@ -229,7 +262,7 @@ Dataset Statistics:
                     context += f"\n⚠️  Generated query failed security validation\n"
                     context += f"Query: {sql_query}\n"
             else:
-                print("💡 Using general statistics (no specific query needed)")
+                logger.debug(f"{log_prefix}Using general statistics (no specific query needed)")
             
             conn.close()
             return context
@@ -254,11 +287,19 @@ Provide a clear, accurate answer based on the context. If the context doesn't co
 Answer:"""
         return prompt
     
-    def _call_llm(self, prompt: str) -> str:
+    def _call_llm(self, prompt: str, request_id: str = None) -> str:
         """Call LLM with prompt."""
+        log_prefix = f"[{request_id}] " if request_id else ""
         if self.llm_provider == "openai":
             try:
-                print(prompt)
+                # Log the prompt in a pretty, readable format
+                logger.debug(f"{log_prefix}" + "=" * 80)
+                logger.debug(f"{log_prefix}LLM PROMPT:")
+                logger.debug(f"{log_prefix}" + "-" * 80)
+                for line in prompt.split('\n'):
+                    logger.debug(f"{log_prefix}{line}")
+                logger.debug(f"{log_prefix}" + "=" * 80)
+                
                 response = self.llm.chat.completions.create(
                     model=self.model_name,
                     messages=[
@@ -312,6 +353,10 @@ Answer:"""
         Returns:
             Dictionary with answer and sources
         """
+        # Generate unique request ID for tracking
+        request_id = str(uuid.uuid4())[:8]
+        logger.info(f"[{request_id}] Processing question: {question}")
+        
         # Use instance defaults from env if not specified
         if max_chunks is None:
             max_chunks = self.max_chunks
@@ -342,13 +387,13 @@ Answer:"""
             doc_context = "No document embeddings available. Answering based on database context only."
         
         # Get database context
-        db_context = self._get_db_context(question)
+        db_context = self._get_db_context(question, request_id)
         
         # Build prompt
         prompt = self._build_prompt(question, doc_context, db_context)
         
         # Get answer from LLM
-        answer = self._call_llm(prompt)
+        answer = self._call_llm(prompt, request_id)
         
         return {
             "question": question,
@@ -356,7 +401,8 @@ Answer:"""
             "sources": sources,
             "db_context": db_context,
             "num_chunks_used": len(sources),
-            "relevance_threshold": relevance_threshold
+            "relevance_threshold": relevance_threshold,
+            "request_id": request_id
         }
 
 
