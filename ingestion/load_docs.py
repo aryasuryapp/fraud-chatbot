@@ -2,9 +2,11 @@
 Load PDF documents, chunk them, and create embeddings for RAG.
 """
 
+import os
 from pathlib import Path
 from typing import List
 import pickle
+from dotenv import load_dotenv
 
 
 def load_pdf_documents(pdf_dir: str) -> List[str]:
@@ -99,8 +101,12 @@ def create_embeddings(chunks: List[str], output_path: str = "data/embeddings.pkl
         print("sentence-transformers not installed. Run: pip install sentence-transformers")
         return
     
-    print("Loading embedding model...")
-    model = SentenceTransformer('all-MiniLM-L6-v2')
+    # Load environment variables
+    load_dotenv()
+    model_name = os.getenv('EMBEDDING_MODEL', 'all-MiniLM-L6-v2')
+    
+    print(f"Loading embedding model: {model_name}...")
+    model = SentenceTransformer(model_name)
     
     print(f"Creating embeddings for {len(chunks)} chunks...")
     embeddings = model.encode(chunks, show_progress_bar=True)

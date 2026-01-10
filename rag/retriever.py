@@ -2,20 +2,27 @@
 Retriever for RAG pipeline - combines vector store with query encoding.
 """
 
+import os
 from typing import List, Tuple
+from dotenv import load_dotenv
 from rag.vector_store import VectorStore
+
+# Load environment variables
+load_dotenv()
 
 
 class Retriever:
     """Document retriever for RAG pipeline."""
     
-    def __init__(self, model_name: str = 'all-MiniLM-L6-v2'):
+    def __init__(self, model_name: str = None):
         """
         Initialize retriever.
         
         Args:
-            model_name: Name of sentence transformer model
+            model_name: Name of sentence transformer model (defaults to EMBEDDING_MODEL env var)
         """
+        if model_name is None:
+            model_name = os.getenv('EMBEDDING_MODEL', 'all-MiniLM-L6-v2')
         self.model_name = model_name
         self.encoder = None
         self.vector_store = VectorStore()

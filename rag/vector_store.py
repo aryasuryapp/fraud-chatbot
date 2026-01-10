@@ -11,12 +11,12 @@ from typing import List, Tuple
 class VectorStore:
     """FAISS-based vector store for document retrieval."""
     
-    def __init__(self, embedding_dim: int = 384):
+    def __init__(self, embedding_dim: int = 768):
         """
         Initialize vector store.
         
         Args:
-            embedding_dim: Dimension of embeddings (384 for all-MiniLM-L6-v2)
+            embedding_dim: Dimension of embeddings (768 for all-mpnet-base-v2, 384 for all-MiniLM-L6-v2)
         """
         self.embedding_dim = embedding_dim
         self.index = None
