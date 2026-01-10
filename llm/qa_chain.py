@@ -76,13 +76,111 @@ class QAChain:
             print(f"Using Ollama with model: {self.model_name}")
             print("Make sure Ollama is running locally")
     
+    def _get_table_stats(self, conn) -> str:
+        """Get useful aggregate statistics about the fraud dataset."""
+        try:
+            stats_query = """
+            SELECT 
+                COUNT(*) as total_records,
+                SUM(is_fraud) as total_fraud_cases,
+                ROUND(SUM(is_fraud) * 100.0 / COUNT(*), 2) as fraud_rate_pct,
+                ROUND(AVG(amt), 2) as avg_transaction_amt,
+                ROUND(MIN(amt), 2) as min_amt,
+                ROUND(MAX(amt), 2) as max_amt,
+                COUNT(DISTINCT category) as num_categories,
+                COUNT(DISTINCT state) as num_states,
+                MIN(trans_date_trans_time) as earliest_date,
+                MAX(trans_date_trans_time) as latest_date
+            FROM fraud_transactions
+            """
+            df = pd.read_sql_query(stats_query, conn)
+            return df.to_string(index=False)
+        except Exception as e:
+            return f"Error getting stats: {str(e)}"
+    
+    def _question_needs_db_query(self, question: str) -> bool:
+        """Determine if question requires specific database query beyond general stats."""
+        question_lower = question.lower()
+        
+        # Keywords that indicate need for specific data queries
+        specific_keywords = [
+            'how many', 'what percentage', 'show me', 'list', 'find',
+            'which', 'top', 'most', 'least', 'average', 'total',
+            'by category', 'by state', 'by merchant', 'between',
+            'where', 'in california', 'over', 'under', 'above', 'below',
+            'compare', 'breakdown', 'distribution', 'group'
+        ]
+        
+        return any(keyword in question_lower for keyword in specific_keywords)
+    
+    def _generate_sql_query(self, question: str, schema: str) -> str:
+        """Use LLM to generate SQL query from natural language question."""
+        prompt = f"""Given this SQLite database schema:
+{schema}
+
+Generate a VALID SQLite query to answer this question: {question}
+
+IMPORTANT Requirements:
+- Return ONLY the SQL query, no explanation or markdown
+- Use proper SQLite syntax (e.g., strftime for dates, || for concatenation)
+- ALWAYS include 'LIMIT 100' to prevent returning too many rows
+- For aggregations, use appropriate GROUP BY clauses
+- Use WHERE clauses to filter data efficiently
+- Use is_fraud column (0 or 1) to filter fraud cases
+- Common categories: gas_transport, grocery_pos, home, shopping_pos, etc.
+- trans_date_trans_time is in format 'YYYY-MM-DD HH:MM:SS'
+
+SQL Query:"""
+        
+        try:
+            query = self._call_llm(prompt).strip()
+            # Clean up common formatting issues
+            query = query.replace('```sql', '').replace('```', '').strip()
+            # Remove any trailing semicolon and add LIMIT if missing
+            query = query.rstrip(';')
+            if 'LIMIT' not in query.upper():
+                query += ' LIMIT 100'
+            return query
+        except Exception as e:
+            return f"SELECT * FROM fraud_transactions LIMIT 100 -- Error generating query: {e}"
+    
+    def _is_safe_query(self, query: str) -> bool:
+        """Validate SQL query to prevent SQL injection and dangerous operations."""
+        if not query or not isinstance(query, str):
+            return False
+        
+        query_upper = query.upper().strip()
+        
+        # Must start with SELECT
+        if not query_upper.startswith('SELECT'):
+            return False
+        
+        # Block dangerous SQL keywords and patterns
+        dangerous_patterns = [
+            'DROP', 'DELETE', 'INSERT', 'UPDATE', 'ALTER', 'CREATE',
+            'TRUNCATE', 'EXEC', 'EXECUTE', 'PRAGMA', 'ATTACH',
+            '--', ';--', '/*', '*/', 'xp_', 'sp_',
+            'UNION SELECT', 'UNION ALL SELECT',  # Block common injection
+            'INTO OUTFILE', 'INTO DUMPFILE',  # Block file operations
+        ]
+        
+        for pattern in dangerous_patterns:
+            if pattern in query_upper:
+                return False
+        
+        # Additional safety: only allow single statement
+        if query.count(';') > 1:
+            return False
+        
+        return True
+    
     def _get_db_context(self, query: str) -> str:
-        """Get relevant data from SQLite database."""
+        """Get relevant data from SQLite database with intelligent query generation."""
         try:
             conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
             
             # Get table schema
-            cursor = conn.cursor()
             cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='fraud_transactions'")
             schema = cursor.fetchone()
             
@@ -90,14 +188,48 @@ class QAChain:
                 conn.close()
                 return "No fraud data available in database."
             
-            # Get sample statistics
-            df = pd.read_sql_query(
-                "SELECT * FROM fraud_transactions LIMIT 5", 
-                conn
-            )
+            # Always get basic statistics (useful for any question)
+            stats = self._get_table_stats(conn)
             
-            context = f"Database Schema:\n{schema[0]}\n\n"
-            context += f"Sample Records:\n{df.to_string()}\n"
+            context = f"""Database: fraud_transactions
+
+Schema:
+{schema[0]}
+
+Dataset Statistics:
+{stats}
+"""
+            
+            # Detect if question needs specific data query
+            if self._question_needs_db_query(query):
+                print("🔍 Generating SQL query for specific data...")
+                
+                # Generate SQL query using LLM
+                sql_query = self._generate_sql_query(query, schema[0])
+                
+                # Validate query for security
+                if self._is_safe_query(sql_query):
+                    try:
+                        # Execute the generated query
+                        df = pd.read_sql_query(sql_query, conn)
+                        
+                        context += f"\nGenerated Query:\n{sql_query}\n\n"
+                        context += f"Query Results ({len(df)} rows):\n"
+                        
+                        # Limit output size for context window
+                        if len(df) > 50:
+                            context += df.head(50).to_string(index=False)
+                            context += f"\n... (showing first 50 of {len(df)} rows)"
+                        else:
+                            context += df.to_string(index=False)
+                    except Exception as e:
+                        context += f"\n⚠️  Query execution error: {str(e)}\n"
+                        context += f"Attempted query: {sql_query}\n"
+                else:
+                    context += f"\n⚠️  Generated query failed security validation\n"
+                    context += f"Query: {sql_query}\n"
+            else:
+                print("💡 Using general statistics (no specific query needed)")
             
             conn.close()
             return context
