@@ -49,12 +49,20 @@ def load_pdf_documents(pdf_dir: str) -> List[str]:
 
 def chunk_documents(documents: List[str], chunk_size: int = 1000, chunk_overlap: int = 200) -> List[str]:
     """
-    Split documents into smaller chunks.
+    Split documents into smaller chunks using semantic separators.
+    
+    Uses RecursiveCharacterTextSplitter with a hierarchy of semantic separators
+    to create more meaningful chunks that respect document structure:
+    - Paragraph breaks (\n\n)
+    - Line breaks (\n)
+    - Sentence endings (. ! ?)
+    - Clauses (; ,)
+    - Words and characters as fallback
     
     Args:
         documents: List of document texts
-        chunk_size: Size of each chunk in characters
-        chunk_overlap: Overlap between chunks
+        chunk_size: Size of each chunk in characters (default: 1000)
+        chunk_overlap: Overlap between chunks (default: 200)
         
     Returns:
         List of text chunks
@@ -72,10 +80,35 @@ def chunk_documents(documents: List[str], chunk_size: int = 1000, chunk_overlap:
             print("Install with: pip install langchain-text-splitters")
             return []
     
+    # Load environment variables for configurable parameters
+    load_dotenv()
+    chunk_size = int(os.getenv('CHUNK_SIZE', chunk_size))
+    chunk_overlap = int(os.getenv('CHUNK_OVERLAP', chunk_overlap))
+    
+    # Semantic separators in priority order:
+    # 1. Paragraph breaks (strongest semantic boundary)
+    # 2. Line breaks
+    # 3. Sentence endings (period, exclamation, question)
+    # 4. Clause separators (semicolon, comma)
+    # 5. Word boundaries (space)
+    # 6. Character-level (fallback)
+    separators = [
+        "\n\n",  # Paragraph breaks
+        "\n",    # Line breaks
+        ". ",    # Sentence endings
+        "! ",    # Exclamations
+        "? ",    # Questions
+        "; ",    # Semicolons (clauses)
+        ", ",    # Commas (lists, clauses)
+        " ",     # Word boundaries
+        ""       # Character-level fallback
+    ]
+    
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap,
         length_function=len,
+        separators=separators,
     )
     
     chunks = []
@@ -84,6 +117,8 @@ def chunk_documents(documents: List[str], chunk_size: int = 1000, chunk_overlap:
         chunks.extend(doc_chunks)
     
     print(f"Created {len(chunks)} chunks from {len(documents)} documents")
+    print(f"Chunk size: {chunk_size}, Overlap: {chunk_overlap}")
+    print(f"Using semantic separators for better context preservation")
     return chunks
 
 

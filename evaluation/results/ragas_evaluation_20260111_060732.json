@@ -1,0 +1,40 @@
+{
+  "individual_results": [
+    {
+      "question": "What percentage of transactions are fraudulent?",
+      "metrics": {
+        "answer_relevancy": 0.924525875742739,
+        "faithfulness": 1.0
+      }
+    },
+    {
+      "question": "What are common fraud patterns in online transactions?",
+      "metrics": {
+        "answer_relevancy": 0.997346106024958,
+        "faithfulness": 0.6923076923076923
+      }
+    },
+    {
+      "question": "How can machine learning help detect fraud?",
+      "metrics": {
+        "answer_relevancy": 0.9999999999999993,
+        "faithfulness": 0.6666666666666666
+      }
+    }
+  ],
+  "average_metrics": {
+    "answer_relevancy": 0.9739573272558988,
+    "faithfulness": 0.7863247863247863
+  },
+  "num_test_cases": 3,
+  "metrics_used": [
+    "answer_relevancy",
+    "faithfulness"
+  ],
+  "metadata": {
+    "timestamp": "20260111_060732",
+    "model": "gpt-3.5-turbo",
+    "use_ground_truth_metrics": false,
+    "num_test_cases": 3
+  }
+}
