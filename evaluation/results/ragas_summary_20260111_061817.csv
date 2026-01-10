@@ -1,0 +1,4 @@
+question,answer_relevancy,faithfulness
+What percentage of transactions are fraudulent?,0.9624676519015039,1.0
+What are common fraud patterns in online transactions?,0.9973501131451877,0.7142857142857143
+How can machine learning help detect fraud?,0.9999999999999993,1.0

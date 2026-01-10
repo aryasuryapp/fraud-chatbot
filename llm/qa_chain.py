@@ -271,20 +271,24 @@ Dataset Statistics:
             return f"Error accessing database: {str(e)}"
     
     def _build_prompt(self, question: str, context: str, db_context: str) -> str:
-        """Build prompt for LLM."""
-        prompt = f"""You are a fraud detection expert assistant. Answer the following question about fraud transactions using the provided context.
+        """Build prompt for LLM with strict grounding."""
+        prompt = f"""You are a fraud detection expert. Answer using ONLY the provided context below.
 
-Question: {question}
+        RULES:
+        - Use ONLY information from the context
+        - Cite sources: [Document 1], [Database], etc.
+        - If not in context, say "Not found in provided documents"
+        - NO external knowledge or general information
 
-Database Context:
-{db_context}
+        Question: {question}
 
-Document Context:
-{context}
+        Database Context:
+        {db_context}
 
-Provide a clear, accurate answer based on the context. If the context doesn't contain enough information, say so.
+        Document Context:
+        {context}
 
-Answer:"""
+        Answer with citations:"""
         return prompt
     
     def _call_llm(self, prompt: str, request_id: str = None) -> str:
