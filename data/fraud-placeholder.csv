@@ -1,0 +1,12 @@
+# Placeholder for fraud dataset
+# Download fraud dataset from Kaggle and place it here
+# 
+# Recommended datasets:
+# 1. Credit Card Fraud Detection: https://www.kaggle.com/mlg-ulb/creditcardfraud
+# 2. IEEE-CIS Fraud Detection: https://www.kaggle.com/c/ieee-fraud-detection
+# 
+# To download using Kaggle API:
+# kaggle datasets download -d mlg-ulb/creditcardfraud
+# 
+# Expected columns (example):
+# - Time, V1-V28, Amount, Class (0=Normal, 1=Fraud)
