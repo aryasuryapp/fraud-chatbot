@@ -37,6 +37,10 @@ class QAChain:
         self.llm = None
         self.has_vector_store = False
         
+        # Load RAG settings from environment
+        self.relevance_threshold = float(os.getenv("RELEVANCE_THRESHOLD", "0.7"))
+        self.max_chunks = int(os.getenv("MAX_CHUNKS", "10"))
+        
         # Try to load retriever (non-blocking if it fails)
         try:
             self.has_vector_store = self.retriever.load_vector_store()
@@ -164,20 +168,44 @@ Answer:"""
         
         return "LLM not initialized"
     
-    def ask(self, question: str, k: int = 3) -> dict:
+    def ask(self, question: str, max_chunks: int = None, relevance_threshold: float = None) -> dict:
         """
-        Answer a question using RAG.
+        Answer a question using RAG with dynamic retrieval.
         
         Args:
             question: User question
-            k: Number of documents to retrieve
+            max_chunks: Maximum number of chunks to retrieve initially (default: from env or 10)
+            relevance_threshold: Minimum similarity score to include chunk (default: from env or 0.7)
             
         Returns:
             Dictionary with answer and sources
         """
+        # Use instance defaults from env if not specified
+        if max_chunks is None:
+            max_chunks = self.max_chunks
+        if relevance_threshold is None:
+            relevance_threshold = self.relevance_threshold
+        
         # Retrieve relevant documents (if vector store is available)
+        sources = []
         if self.has_vector_store:
-            doc_context = self.retriever.retrieve_with_context(question, k=k)
+            # Retrieve top candidates
+            raw_results = self.retriever.retrieve(question, k=max_chunks)
+            
+            # Filter by relevance threshold
+            filtered_sources = [(chunk, score) for chunk, score in raw_results if score >= relevance_threshold]
+            
+            # Use top 5 max for context (cost control)
+            sources = filtered_sources[:5]
+            
+            # Build context from filtered sources
+            if sources:
+                context_parts = []
+                for i, (chunk, score) in enumerate(sources, 1):
+                    context_parts.append(f"[Document {i}] (Relevance: {score:.3f})\n{chunk}\n")
+                doc_context = "\n".join(context_parts)
+            else:
+                doc_context = "No highly relevant documents found (all scores below threshold)."
         else:
             doc_context = "No document embeddings available. Answering based on database context only."
         
@@ -190,16 +218,13 @@ Answer:"""
         # Get answer from LLM
         answer = self._call_llm(prompt)
         
-        # Get source documents (if available)
-        sources = []
-        if self.has_vector_store:
-            sources = self.retriever.retrieve(question, k=k)
-        
         return {
             "question": question,
             "answer": answer,
             "sources": sources,
-            "db_context": db_context
+            "db_context": db_context,
+            "num_chunks_used": len(sources),
+            "relevance_threshold": relevance_threshold
         }
 
 

@@ -71,11 +71,21 @@ def main():
     # Sidebar configuration
     st.sidebar.title("⚙️ Configuration")
     
-    num_sources = st.sidebar.slider("Number of sources to retrieve", 1, 10, 3)
+    # Display dynamic settings from QA chain
+    if 'qa_chain' in st.session_state:
+        threshold = st.session_state.qa_chain.relevance_threshold
+        max_chunks = st.session_state.qa_chain.max_chunks
+    else:
+        threshold = float(os.getenv("RELEVANCE_THRESHOLD", "0.7"))
+        max_chunks = int(os.getenv("MAX_CHUNKS", "10"))
     
     st.sidebar.markdown("---")
     st.sidebar.info(
-        "🤖 **Model:** GPT-3.5 Turbo (OpenAI)\n\n"
+        f"🤖 **Model:** GPT-3.5 Turbo (OpenAI)\n\n"
+        f"📚 **Retrieval:** Dynamic\n"
+        f"- Max chunks: {max_chunks}\n"
+        f"- Relevance threshold: {threshold}\n"
+        f"- Max context: 5 chunks\n\n"
         "This chatbot uses RAG (Retrieval-Augmented Generation) to answer "
         "questions about fraud transactions using your dataset and documents."
     )
@@ -98,8 +108,9 @@ def main():
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
             
-            if "sources" in message:
-                with st.expander("📚 View Sources"):
+            if "sources" in message and message["sources"]:
+                num_sources = len(message["sources"])
+                with st.expander(f"📚 View Sources ({num_sources} chunks)"):
                     for i, (chunk, score) in enumerate(message["sources"], 1):
                         st.markdown(f"**Source {i}** (Relevance: {score:.3f})")
                         st.text(chunk[:300] + "..." if len(chunk) > 300 else chunk)
@@ -117,18 +128,23 @@ def main():
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
                 try:
-                    result = st.session_state.qa_chain.ask(question, k=num_sources)
+                    result = st.session_state.qa_chain.ask(question)
                     answer = result["answer"]
                     sources = result["sources"]
+                    num_chunks = result.get("num_chunks_used", 0)
+                    threshold = result.get("relevance_threshold", 0.7)
                     
                     st.markdown(answer)
                     
                     # Show sources
-                    with st.expander("📚 View Sources"):
-                        for i, (chunk, score) in enumerate(sources, 1):
-                            st.markdown(f"**Source {i}** (Relevance: {score:.3f})")
-                            st.text(chunk[:300] + "..." if len(chunk) > 300 else chunk)
-                            st.markdown("---")
+                    with st.expander(f"📚 View Sources ({num_chunks} chunks used, threshold: {threshold})"):
+                        if sources:
+                            for i, (chunk, score) in enumerate(sources, 1):
+                                st.markdown(f"**Source {i}** (Relevance: {score:.3f})")
+                                st.text(chunk[:300] + "..." if len(chunk) > 300 else chunk)
+                                st.markdown("---")
+                        else:
+                            st.info("No sources met the relevance threshold.")
                     
                     # Add assistant message
                     st.session_state.messages.append({
