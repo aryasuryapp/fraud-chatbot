@@ -146,7 +146,7 @@ class QAChain:
         return any(keyword in question_lower for keyword in specific_keywords)
     
     def _generate_sql_query(self, question: str, schema: str, request_id: str = None) -> str:
-        """Use LLM to generate SQL query from natural language question."""
+        """Use LLM to generate SQL query from natural language question with temperature=0 for consistency."""
         prompt = f"""Given this SQLite database schema:
 {schema}
 
@@ -155,7 +155,9 @@ Generate a VALID SQLite query to answer this question: {question}
 IMPORTANT Requirements:
 - Return ONLY the SQL query, no explanation or markdown
 - Use proper SQLite syntax (e.g., strftime for dates, || for concatenation)
-- ALWAYS include 'LIMIT 100' to prevent returning too many rows
+- For percentage calculations, use: COUNT(CASE WHEN condition THEN 1 END) * 100.0 / COUNT(*)
+- For percentage queries, use WHERE to filter first, then calculate percentage within filtered set
+- Use LIMIT 100 only for queries returning multiple rows (not for aggregations without GROUP BY)
 - For aggregations, use appropriate GROUP BY clauses
 - Use WHERE clauses to filter data efficiently
 - Use is_fraud column (0 or 1) to filter fraud cases
@@ -164,16 +166,59 @@ IMPORTANT Requirements:
 
 SQL Query:"""
         
+        log_prefix = f"[{request_id}] " if request_id else ""
+        
         try:
-            query = self._call_llm(prompt, request_id).strip()
+            # Use temperature=0 for deterministic SQL generation
+            if self.llm_provider == "openai":
+                response = self.llm.chat.completions.create(
+                    model=self.model_name,
+                    messages=[
+                        {"role": "system", "content": "You are an expert SQL developer. Generate only valid, efficient SQL queries."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0,  # Deterministic for consistent SQL generation
+                    max_tokens=300
+                )
+                query = response.choices[0].message.content.strip()
+            elif self.llm_provider == "anthropic":
+                message = self.llm.messages.create(
+                    model=self.model_name,
+                    max_tokens=300,
+                    temperature=0,
+                    messages=[{"role": "user", "content": prompt}]
+                )
+                query = message.content[0].text.strip()
+            else:
+                # Fallback to _call_llm for other providers
+                query = self._call_llm(prompt, request_id).strip()
+            
             # Clean up common formatting issues
             query = query.replace('```sql', '').replace('```', '').strip()
-            # Remove any trailing semicolon and add LIMIT if missing
             query = query.rstrip(';')
-            if 'LIMIT' not in query.upper():
+            
+            # Smart LIMIT handling: only add if query returns multiple rows
+            query_upper = query.upper()
+            needs_limit = (
+                'LIMIT' not in query_upper and (
+                    'GROUP BY' in query_upper or  # Multiple groups need LIMIT
+                    # Non-aggregation queries need LIMIT (has SELECT but no aggregation functions)
+                    (query_upper.count('SELECT') == 1 and 
+                     'COUNT(' not in query_upper and 
+                     'SUM(' not in query_upper and 
+                     'AVG(' not in query_upper and
+                     'MAX(' not in query_upper and
+                     'MIN(' not in query_upper)
+                )
+            )
+            
+            if needs_limit:
                 query += ' LIMIT 100'
+            
+            logger.debug(f"{log_prefix}Generated SQL query: {query}")
             return query
         except Exception as e:
+            logger.error(f"{log_prefix}Error generating SQL query: {e}")
             return f"SELECT * FROM fraud_transactions LIMIT 100 -- Error generating query: {e}"
     
     def _is_safe_query(self, query: str) -> bool:
@@ -271,14 +316,8 @@ Dataset Statistics:
             return f"Error accessing database: {str(e)}"
     
     def _build_prompt(self, question: str, context: str, db_context: str) -> str:
-        """Build prompt for LLM with strict grounding."""
-        prompt = f"""You are a fraud detection expert. Answer using ONLY the provided context below.
-
-        RULES:
-        - Use ONLY information from the context
-        - Cite sources: [Document 1], [Database], etc.
-        - If not in context, say "Not found in provided documents"
-        - NO external knowledge or general information
+        """Build prompt for LLM with proper handling of both database and document context."""
+        prompt = f"""You are a fraud detection expert assistant. Answer the question using the provided context.
 
         Question: {question}
 
@@ -288,7 +327,15 @@ Dataset Statistics:
         Document Context:
         {context}
 
-        Answer with citations:"""
+        INSTRUCTIONS:
+        - Use information from BOTH Database Context and Document Context
+        - Database Context (statistics, query results) is valid and authoritative - use it freely
+        - Document Context (PDF excerpts) provides additional insights - reference with [Document N]
+        - If database has the answer (statistics, counts, percentages), use it directly
+        - Only say "information not available" if NEITHER source contains relevant information
+        - Be specific and cite your sources when possible
+
+        Answer:"""
         return prompt
     
     def _call_llm(self, prompt: str, request_id: str = None) -> str:
