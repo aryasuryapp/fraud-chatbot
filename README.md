@@ -25,7 +25,11 @@ fraud-chatbot/
 │   └── app.py                 # Streamlit web interface
 │
 ├── evaluation/
-│   └── scorer.py              # Answer quality metrics
+│   ├── scorer.py              # RAGAS-based evaluation
+│   ├── test_dataset.py        # Test cases for evaluation
+│   ├── run_evaluation.py      # Batch evaluation script
+│   ├── example.py             # Single evaluation example
+│   └── README.md              # Evaluation documentation
 │
 ├── database.db                # SQLite database
 ├── requirements.txt           # Python dependencies
@@ -141,20 +145,39 @@ result = qa.ask("What patterns indicate fraudulent transactions?")
 print(result["answer"])
 ```
 
-### Evaluation
+### Evaluation with RAGAS
+
+Evaluate the RAG system quality using RAGAS library:
 
 ```python
+from llm.qa_chain import QAChain
 from evaluation.scorer import QAScorer
 
-scorer = QAScorer()
-metrics = scorer.evaluate_qa_result(
-    question="What are fraud indicators?",
-    answer=generated_answer,
-    context=retrieved_context
+# Initialize
+qa_chain = QAChain()
+scorer = QAScorer(use_ground_truth_metrics=False)
+
+# Get answer in RAGAS format
+result = qa_chain.ask_for_evaluation("What are fraud indicators?")
+
+# Evaluate
+metrics = scorer.evaluate_single(
+    question=result["question"],
+    answer=result["answer"],
+    contexts=result["contexts"]
 )
-print(f"Relevance: {metrics['relevance']:.3f}")
+
+print(f"Context Precision: {metrics['context_precision']:.3f}")
+print(f"Answer Relevancy: {metrics['answer_relevancy']:.3f}")
 print(f"Faithfulness: {metrics['faithfulness']:.3f}")
 ```
+
+Run batch evaluation on test dataset:
+```bash
+python evaluation/run_evaluation.py
+```
+
+See [evaluation/README.md](evaluation/README.md) for complete documentation.
 
 ## 🔧 Configuration
 
@@ -189,11 +212,27 @@ pip install faiss-gpu
 
 ## 🧪 Testing & Evaluation
 
-Run evaluation metrics:
+Run RAGAS evaluation on test dataset:
 
 ```bash
-python evaluation/scorer.py
+# Quick evaluation with default settings
+python evaluation/run_evaluation.py
+
+# Single question example
+python evaluation/example.py
+
+# Advanced options
+python evaluation/run_evaluation.py --with-ground-truth --model gpt-4
 ```
+
+**RAGAS Metrics:**
+- **context_precision**: Relevance of retrieved contexts
+- **answer_relevancy**: Question-answer alignment  
+- **faithfulness**: Answer grounded in context
+- **context_recall**: Completeness of retrieval (requires ground truth)
+- **answer_correctness**: Semantic similarity to expected answer (requires ground truth)
+
+See [evaluation/README.md](evaluation/README.md) for detailed evaluation guide.
 
 Metrics included:
 - **Relevance**: Answer relevance to question
@@ -219,7 +258,10 @@ Metrics included:
 ## 📝 Dependencies
 
 Key libraries:
+- `ragas` - RAG evaluation framework
 - `langchain` - LLM orchestration
+- `langchain-openai` - OpenAI integration for RAGAS
+- `datasets` - Dataset handling for RAGAS
 - `faiss-cpu` - Vector similarity search
 - `sentence-transformers` - Text embeddings
 - `streamlit` - Web UI

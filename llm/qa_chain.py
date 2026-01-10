@@ -404,6 +404,52 @@ Answer:"""
             "relevance_threshold": relevance_threshold,
             "request_id": request_id
         }
+    
+    def ask_for_evaluation(self, question: str, max_chunks: int = None, relevance_threshold: float = None) -> dict:
+        """
+        Answer a question and return result in RAGAS-compatible format.
+        
+        This method is specifically designed for evaluation purposes, formatting
+        the response to work seamlessly with RAGAS metrics.
+        
+        Args:
+            question: User question
+            max_chunks: Maximum number of chunks to retrieve initially
+            relevance_threshold: Minimum similarity score to include chunk
+            
+        Returns:
+            Dictionary with RAGAS-compatible format:
+            - question: str
+            - answer: str
+            - contexts: List[str] (list of context strings)
+            - metadata: dict (sources with scores, db_context, etc.)
+        """
+        # Get standard result
+        result = self.ask(question, max_chunks, relevance_threshold)
+        
+        # Convert to RAGAS format
+        contexts = []
+        
+        # Add document contexts (from vector store)
+        for chunk, score in result["sources"]:
+            contexts.append(chunk)
+        
+        # Optionally include database context as a separate context
+        if result["db_context"] and "No fraud data" not in result["db_context"]:
+            contexts.append(f"Database Context:\n{result['db_context']}")
+        
+        return {
+            "question": result["question"],
+            "answer": result["answer"],
+            "contexts": contexts,  # RAGAS expects List[str]
+            "metadata": {
+                "sources": result["sources"],  # Keep original with scores
+                "db_context": result["db_context"],
+                "num_chunks_used": result["num_chunks_used"],
+                "relevance_threshold": result["relevance_threshold"],
+                "request_id": result["request_id"]
+            }
+        }
 
 
 if __name__ == "__main__":
