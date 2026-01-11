@@ -87,6 +87,8 @@ class Retriever:
         
         # If using reranker, retrieve more candidates
         if self.use_reranker and self.reranker is not None:
+            import numpy as np
+            
             # Retrieve more candidates for reranking
             initial_k = int(os.getenv('INITIAL_RETRIEVAL_K', '20'))
             results = self.vector_store.search(query_embedding, k=initial_k)
@@ -96,10 +98,19 @@ class Retriever:
                 documents = [doc for doc, _ in results]
                 # Create query-document pairs for cross-encoder
                 pairs = [(query, doc) for doc in documents]
-                scores = self.reranker.predict(pairs)
+                raw_scores = self.reranker.predict(pairs)
                 
-                # Combine documents with new scores and sort
-                reranked = list(zip(documents, scores))
+                # Min-Max normalization: maps scores to 0-1 range while preserving ranking
+                # This makes cross-encoder scores comparable to cosine similarity scores
+                scores_array = np.array(raw_scores)
+                if scores_array.max() > scores_array.min():
+                    normalized_scores = (scores_array - scores_array.min()) / (scores_array.max() - scores_array.min())
+                else:
+                    # All scores are the same, assign 0.5 to all
+                    normalized_scores = np.ones_like(scores_array) * 0.5
+                
+                # Combine documents with normalized scores and sort
+                reranked = list(zip(documents, normalized_scores.tolist()))
                 reranked.sort(key=lambda x: x[1], reverse=True)
                 
                 # Return top k reranked results
