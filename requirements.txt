@@ -14,6 +14,7 @@ langchain-text-splitters>=0.0.1
 # Embeddings and vector store
 sentence-transformers>=2.2.0
 faiss-cpu>=1.7.4  # Use faiss-gpu for GPU support
+weaviate-client>=4.4.0  # Weaviate vector store with metadata support
 
 # LLM providers (choose based on your needs)
 openai>=1.0.0

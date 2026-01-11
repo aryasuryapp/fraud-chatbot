@@ -1,32 +1,44 @@
 """
-Retriever for RAG pipeline - combines vector store with query encoding.
+Retriever for RAG pipeline - supports both FAISS and Weaviate backends.
 """
 
 import os
-from typing import List, Tuple
+from typing import List, Tuple, Dict, Optional
 from dotenv import load_dotenv
-from rag.vector_store import VectorStore
 
 # Load environment variables
 load_dotenv()
 
 
 class Retriever:
-    """Document retriever for RAG pipeline."""
+    """Document retriever supporting both FAISS and Weaviate backends."""
     
-    def __init__(self, model_name: str = None, use_reranker: bool = None):
+    def __init__(self, model_name: str = None, use_reranker: bool = None, backend: str = None):
         """
         Initialize retriever.
         
         Args:
-            model_name: Name of sentence transformer model (defaults to EMBEDDING_MODEL env var)
-            use_reranker: Whether to use cross-encoder reranking (defaults to USE_RERANKER env var)
+            model_name: Name of sentence transformer model
+            use_reranker: Whether to use cross-encoder reranking
+            backend: Vector store backend ('faiss' or 'weaviate')
         """
         if model_name is None:
             model_name = os.getenv('EMBEDDING_MODEL', 'all-MiniLM-L6-v2')
         self.model_name = model_name
         self.encoder = None
-        self.vector_store = VectorStore()
+        
+        # Determine backend
+        if backend is None:
+            backend = os.getenv('VECTOR_STORE', 'faiss').lower()
+        self.backend = backend
+        
+        # Initialize appropriate vector store
+        if self.backend == 'weaviate':
+            from rag.weaviate_store import WeaviateVectorStore
+            self.vector_store = WeaviateVectorStore()
+        else:
+            from rag.vector_store import VectorStore
+            self.vector_store = VectorStore()
         
         # Reranker configuration
         if use_reranker is None:
@@ -37,6 +49,8 @@ class Retriever:
         self._load_encoder()
         if self.use_reranker:
             self._load_reranker()
+        
+        print(f"✓ Retriever initialized with {self.backend.upper()} backend")
     
     def _load_encoder(self):
         """Load sentence transformer model."""
@@ -59,24 +73,24 @@ class Retriever:
             self.use_reranker = False
     
     def load_vector_store(self, embeddings_path: str = "data/embeddings.pkl"):
-        """
-        Load vector store from file.
-        
-        Args:
-            embeddings_path: Path to embeddings file
-        """
-        return self.vector_store.load_from_file(embeddings_path)
+        """Load vector store (only for FAISS backend)."""
+        if self.backend == 'faiss':
+            return self.vector_store.load_from_file(embeddings_path)
+        else:
+            # Weaviate is always "loaded" via connection
+            return True
     
-    def retrieve(self, query: str, k: int = 5) -> List[Tuple[str, float]]:
+    def retrieve(self, query: str, k: int = 5, filters: Optional[Dict] = None) -> List[Tuple[str, float, Optional[Dict]]]:
         """
         Retrieve relevant documents for query.
         
         Args:
             query: Search query
             k: Number of documents to retrieve (final count after reranking)
+            filters: Optional metadata filters (Weaviate only)
             
         Returns:
-            List of (document_text, relevance_score) tuples
+            List of (document_text, relevance_score, metadata) tuples
         """
         if self.encoder is None:
             print("Encoder not loaded")
@@ -85,41 +99,70 @@ class Retriever:
         # Encode query
         query_embedding = self.encoder.encode([query])[0]
         
-        # If using reranker, retrieve more candidates
-        if self.use_reranker and self.reranker is not None:
-            import numpy as np
-            
-            # Retrieve more candidates for reranking
-            initial_k = int(os.getenv('INITIAL_RETRIEVAL_K', '20'))
-            results = self.vector_store.search(query_embedding, k=initial_k)
-            
-            # Rerank with cross-encoder
-            if results:
-                documents = [doc for doc, _ in results]
-                # Create query-document pairs for cross-encoder
-                pairs = [(query, doc) for doc in documents]
-                raw_scores = self.reranker.predict(pairs)
+        # Search based on backend
+        if self.backend == 'weaviate':
+            # Determine retrieval count based on reranking
+            if self.use_reranker and self.reranker is not None:
+                initial_k = int(os.getenv('INITIAL_RETRIEVAL_K', '20'))
+                raw_results = self.vector_store.search(
+                    query_embedding.tolist(), 
+                    k=initial_k,
+                    filters=filters
+                )
                 
-                # Min-Max normalization: maps scores to 0-1 range while preserving ranking
-                # This makes cross-encoder scores comparable to cosine similarity scores
-                scores_array = np.array(raw_scores)
-                if scores_array.max() > scores_array.min():
-                    normalized_scores = (scores_array - scores_array.min()) / (scores_array.max() - scores_array.min())
-                else:
-                    # All scores are the same, assign 0.5 to all
-                    normalized_scores = np.ones_like(scores_array) * 0.5
-                
-                # Combine documents with normalized scores and sort
-                reranked = list(zip(documents, normalized_scores.tolist()))
-                reranked.sort(key=lambda x: x[1], reverse=True)
-                
-                # Return top k reranked results
-                return reranked[:k]
+                if raw_results:
+                    import numpy as np
+                    documents = [doc for doc, _, _ in raw_results]
+                    metadata_list = [meta for _, _, meta in raw_results]
+                    pairs = [(query, doc) for doc in documents]
+                    raw_scores = self.reranker.predict(pairs)
+                    
+                    # Normalize scores
+                    scores_array = np.array(raw_scores)
+                    if scores_array.max() > scores_array.min():
+                        normalized_scores = (scores_array - scores_array.min()) / (scores_array.max() - scores_array.min())
+                    else:
+                        normalized_scores = np.ones_like(scores_array) * 0.5
+                    
+                    reranked = list(zip(documents, normalized_scores.tolist(), metadata_list))
+                    reranked.sort(key=lambda x: x[1], reverse=True)
+                    return reranked[:k]
+            else:
+                # No reranking
+                results = self.vector_store.search(
+                    query_embedding.tolist(), 
+                    k=k,
+                    filters=filters
+                )
+                return results
         else:
-            # Standard retrieval without reranking
-            results = self.vector_store.search(query_embedding, k=k)
+            # FAISS backend
+            if self.use_reranker and self.reranker is not None:
+                import numpy as np
+                initial_k = int(os.getenv('INITIAL_RETRIEVAL_K', '20'))
+                raw_results = self.vector_store.search(query_embedding, k=initial_k)
+                
+                if raw_results:
+                    documents = [doc for doc, _ in raw_results]
+                    pairs = [(query, doc) for doc in documents]
+                    raw_scores = self.reranker.predict(pairs)
+                    
+                    # Normalize scores
+                    scores_array = np.array(raw_scores)
+                    if scores_array.max() > scores_array.min():
+                        normalized_scores = (scores_array - scores_array.min()) / (scores_array.max() - scores_array.min())
+                    else:
+                        normalized_scores = np.ones_like(scores_array) * 0.5
+                    
+                    reranked = list(zip(documents, normalized_scores.tolist(), [None] * len(documents)))
+                    reranked.sort(key=lambda x: x[1], reverse=True)
+                    return reranked[:k]
+            else:
+                results = self.vector_store.search(query_embedding, k=k)
+                # Add None for metadata to match return signature
+                return [(text, score, None) for text, score in results]
         
-        return results
+        return []
     
     def retrieve_with_context(self, query: str, k: int = 3) -> str:
         """
@@ -138,10 +181,24 @@ class Retriever:
             return "No relevant documents found."
         
         context_parts = []
-        for i, (chunk, score) in enumerate(results, 1):
-            context_parts.append(f"[Document {i}] (Relevance: {score:.3f})\n{chunk}\n")
+        for i, result in enumerate(results, 1):
+            if len(result) == 3:
+                chunk, score, metadata = result
+                meta_str = ""
+                if metadata:
+                    meta_str = f" [Source: {metadata.get('source', 'unknown')}, Page: {metadata.get('page', 'N/A')}]"
+                context_parts.append(f"[Document {i}]{meta_str} (Relevance: {score:.3f})\n{chunk}\n")
+            else:
+                # Legacy format: (chunk, score)
+                chunk, score = result
+                context_parts.append(f"[Document {i}] (Relevance: {score:.3f})\n{chunk}\n")
         
         return "\n".join(context_parts)
+    
+    def close(self):
+        """Close connections."""
+        if self.backend == 'weaviate' and hasattr(self.vector_store, 'close'):
+            self.vector_store.close()
 
 
 if __name__ == "__main__":
@@ -155,8 +212,19 @@ if __name__ == "__main__":
         
         print(f"Query: {query}\n")
         print("Retrieved documents:")
-        for i, (chunk, score) in enumerate(results, 1):
-            print(f"\n{i}. (Score: {score:.3f})")
-            print(chunk[:200] + "...")
+        for i, result in enumerate(results, 1):
+            if len(result) == 3:
+                chunk, score, metadata = result
+                print(f"\n{i}. (Score: {score:.3f})")
+                if metadata:
+                    print(f"   Source: {metadata.get('source')}, Page: {metadata.get('page')}")
+                print(chunk[:200] + "...")
+            else:
+                chunk, score = result
+                print(f"\n{i}. (Score: {score:.3f})")
+                print(chunk[:200] + "...")
     else:
         print("Vector store not available. Run ingestion pipeline first.")
+    
+    # Close connections
+    retriever.close()

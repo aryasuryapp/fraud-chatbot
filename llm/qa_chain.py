@@ -420,8 +420,19 @@ Dataset Statistics:
             # Retrieve top candidates
             raw_results = self.retriever.retrieve(question, k=max_chunks)
             
-            # Filter by relevance threshold
-            filtered_sources = [(chunk, score) for chunk, score in raw_results if score >= relevance_threshold]
+            # Filter by relevance threshold and handle both formats
+            filtered_sources = []
+            for result in raw_results:
+                if len(result) == 3:
+                    # New format: (chunk, score, metadata)
+                    chunk, score, metadata = result
+                    if score >= relevance_threshold:
+                        filtered_sources.append((chunk, score, metadata))
+                else:
+                    # Legacy format: (chunk, score)
+                    chunk, score = result
+                    if score >= relevance_threshold:
+                        filtered_sources.append((chunk, score, None))
             
             # Use top 5 max for context (cost control)
             sources = filtered_sources[:5]
@@ -429,8 +440,16 @@ Dataset Statistics:
             # Build context from filtered sources
             if sources:
                 context_parts = []
-                for i, (chunk, score) in enumerate(sources, 1):
-                    context_parts.append(f"[Document {i}] (Relevance: {score:.3f})\n{chunk}\n")
+                for i, source_item in enumerate(sources, 1):
+                    if len(source_item) == 3:
+                        chunk, score, metadata = source_item
+                        meta_str = ""
+                        if metadata:
+                            meta_str = f" [Source: {metadata.get('source', 'unknown')}, Page: {metadata.get('page', 'N/A')}]"
+                        context_parts.append(f"[Document {i}]{meta_str} (Relevance: {score:.3f})\n{chunk}\n")
+                    else:
+                        chunk, score, _ = source_item
+                        context_parts.append(f"[Document {i}] (Relevance: {score:.3f})\n{chunk}\n")
                 doc_context = "\n".join(context_parts)
             else:
                 doc_context = "No highly relevant documents found (all scores below threshold)."
@@ -482,8 +501,13 @@ Dataset Statistics:
         contexts = []
         
         # Add document contexts (from vector store)
-        for chunk, score in result["sources"]:
-            contexts.append(chunk)
+        for source_item in result["sources"]:
+            if len(source_item) == 3:
+                chunk, score, metadata = source_item
+                contexts.append(chunk)
+            else:
+                chunk, score, _ = source_item
+                contexts.append(chunk)
         
         # Optionally include database context as a separate context
         if result["db_context"] and "No fraud data" not in result["db_context"]:

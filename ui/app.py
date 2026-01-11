@@ -111,8 +111,16 @@ def main():
             if "sources" in message and message["sources"]:
                 num_sources = len(message["sources"])
                 with st.expander(f"📚 View Sources ({num_sources} chunks)"):
-                    for i, (chunk, score) in enumerate(message["sources"], 1):
-                        st.markdown(f"**Source {i}** (Relevance: {score:.3f})")
+                    for i, source_item in enumerate(message["sources"], 1):
+                        if len(source_item) == 3:
+                            chunk, score, metadata = source_item
+                            meta_str = ""
+                            if metadata:
+                                meta_str = f" - {metadata.get('source', 'unknown')}, Page {metadata.get('page', 'N/A')}"
+                            st.markdown(f"**Source {i}**{meta_str} (Relevance: {score:.3f})")
+                        else:
+                            chunk, score = source_item
+                            st.markdown(f"**Source {i}** (Relevance: {score:.3f})")
                         st.text(chunk[:300] + "..." if len(chunk) > 300 else chunk)
                         st.markdown("---")
     
@@ -139,8 +147,16 @@ def main():
                     # Show sources
                     with st.expander(f"📚 View Sources ({num_chunks} chunks used, threshold: {threshold})"):
                         if sources:
-                            for i, (chunk, score) in enumerate(sources, 1):
-                                st.markdown(f"**Source {i}** (Relevance: {score:.3f})")
+                            for i, source_item in enumerate(sources, 1):
+                                if len(source_item) == 3:
+                                    chunk, score, metadata = source_item
+                                    meta_str = ""
+                                    if metadata:
+                                        meta_str = f" - {metadata.get('source', 'unknown')}, Page {metadata.get('page', 'N/A')}"
+                                    st.markdown(f"**Source {i}**{meta_str} (Relevance: {score:.3f})")
+                                else:
+                                    chunk, score = source_item
+                                    st.markdown(f"**Source {i}** (Relevance: {score:.3f})")
                                 st.text(chunk[:300] + "..." if len(chunk) > 300 else chunk)
                                 st.markdown("---")
                         else:
