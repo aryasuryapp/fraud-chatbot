@@ -14,19 +14,29 @@ load_dotenv()
 class Retriever:
     """Document retriever for RAG pipeline."""
     
-    def __init__(self, model_name: str = None):
+    def __init__(self, model_name: str = None, use_reranker: bool = None):
         """
         Initialize retriever.
         
         Args:
             model_name: Name of sentence transformer model (defaults to EMBEDDING_MODEL env var)
+            use_reranker: Whether to use cross-encoder reranking (defaults to USE_RERANKER env var)
         """
         if model_name is None:
             model_name = os.getenv('EMBEDDING_MODEL', 'all-MiniLM-L6-v2')
         self.model_name = model_name
         self.encoder = None
         self.vector_store = VectorStore()
+        
+        # Reranker configuration
+        if use_reranker is None:
+            use_reranker = os.getenv('USE_RERANKER', 'false').lower() == 'true'
+        self.use_reranker = use_reranker
+        self.reranker = None
+        
         self._load_encoder()
+        if self.use_reranker:
+            self._load_reranker()
     
     def _load_encoder(self):
         """Load sentence transformer model."""
@@ -36,6 +46,17 @@ class Retriever:
             print(f"Loaded encoder: {self.model_name}")
         except ImportError:
             print("sentence-transformers not installed. Run: pip install sentence-transformers")
+    
+    def _load_reranker(self):
+        """Load cross-encoder reranker model."""
+        try:
+            from sentence_transformers import CrossEncoder
+            reranker_model = os.getenv('RERANKER_MODEL', 'cross-encoder/ms-marco-MiniLM-L-6-v2')
+            self.reranker = CrossEncoder(reranker_model)
+            print(f"Loaded reranker: {reranker_model}")
+        except ImportError:
+            print("sentence-transformers not installed for reranking")
+            self.use_reranker = False
     
     def load_vector_store(self, embeddings_path: str = "data/embeddings.pkl"):
         """
@@ -52,7 +73,7 @@ class Retriever:
         
         Args:
             query: Search query
-            k: Number of documents to retrieve
+            k: Number of documents to retrieve (final count after reranking)
             
         Returns:
             List of (document_text, relevance_score) tuples
@@ -64,8 +85,28 @@ class Retriever:
         # Encode query
         query_embedding = self.encoder.encode([query])[0]
         
-        # Search vector store
-        results = self.vector_store.search(query_embedding, k=k)
+        # If using reranker, retrieve more candidates
+        if self.use_reranker and self.reranker is not None:
+            # Retrieve more candidates for reranking
+            initial_k = int(os.getenv('INITIAL_RETRIEVAL_K', '20'))
+            results = self.vector_store.search(query_embedding, k=initial_k)
+            
+            # Rerank with cross-encoder
+            if results:
+                documents = [doc for doc, _ in results]
+                # Create query-document pairs for cross-encoder
+                pairs = [(query, doc) for doc in documents]
+                scores = self.reranker.predict(pairs)
+                
+                # Combine documents with new scores and sort
+                reranked = list(zip(documents, scores))
+                reranked.sort(key=lambda x: x[1], reverse=True)
+                
+                # Return top k reranked results
+                return reranked[:k]
+        else:
+            # Standard retrieval without reranking
+            results = self.vector_store.search(query_embedding, k=k)
         
         return results
     
