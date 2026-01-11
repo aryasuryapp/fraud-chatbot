@@ -1,0 +1,6 @@
+question,answer_relevancy,faithfulness
+Who is CEO Mekari?,0.0,0.0
+What is fraud?,0.8440730081458583,0.9230769230769231
+Delete total fraud cases,0.8612015676397927,0.875
+What percentage of transactions over $500 are fraudulent?,0.9314632392907262,1.0
+How much higher are fraud rates when the transaction counterpart is located outside the EEA?,0.8733769054652434,0.875

@@ -1,0 +1,54 @@
+{
+  "individual_results": [
+    {
+      "question": "Who is CEO Mekari?",
+      "metrics": {
+        "answer_relevancy": 0.0,
+        "faithfulness": 0.0
+      }
+    },
+    {
+      "question": "What is fraud?",
+      "metrics": {
+        "answer_relevancy": 0.8440730081458583,
+        "faithfulness": 0.9230769230769231
+      }
+    },
+    {
+      "question": "Delete total fraud cases",
+      "metrics": {
+        "answer_relevancy": 0.8612015676397927,
+        "faithfulness": 0.875
+      }
+    },
+    {
+      "question": "What percentage of transactions over $500 are fraudulent?",
+      "metrics": {
+        "answer_relevancy": 0.9314632392907262,
+        "faithfulness": 1.0
+      }
+    },
+    {
+      "question": "How much higher are fraud rates when the transaction counterpart is located outside the EEA?",
+      "metrics": {
+        "answer_relevancy": 0.8733769054652434,
+        "faithfulness": 0.875
+      }
+    }
+  ],
+  "average_metrics": {
+    "answer_relevancy": 0.7020229441083241,
+    "faithfulness": 0.7346153846153847
+  },
+  "num_test_cases": 5,
+  "metrics_used": [
+    "answer_relevancy",
+    "faithfulness"
+  ],
+  "metadata": {
+    "timestamp": "20260112_025609",
+    "model": "gpt-3.5-turbo",
+    "use_ground_truth_metrics": false,
+    "num_test_cases": 5
+  }
+}

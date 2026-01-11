@@ -1,0 +1,6 @@
+question,context_precision,answer_relevancy,faithfulness,context_recall,answer_correctness
+What is fraud?,0.7499999999625,0.8417249689547232,1.0,0.0,0.5635493297879005
+What are the primary methods by which credit card fraud is committed?,0.9999999999833333,1.0,0.7272727272727273,1.0,0.5600742970337631
+What percentage of transactions over $500 are fraudulent?,0.46666666665111106,0.9816434849961231,0.5,1.0,0.9962425813691622
+How does the daily or monthly fraud rate fluctuate over the two-year period?,0.733333333315,0.0,0.5714285714285714,1.0,0.48062395481114684
+Which merchants or merchant categories exhibit the highest incidence of fraudulent transactions?,0.8099999999838,0.9491167904686851,0.8333333333333334,1.0,0.6326606550738509

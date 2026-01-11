@@ -179,17 +179,29 @@ class QAScorer:
             for col in result_df.columns:
                 if col not in ["question", "answer", "contexts", "ground_truth", "user_input", "retrieved_contexts", "response"]:
                     value = result_df[col].iloc[i]
-                    test_result["metrics"][col] = float(value) if pd.notna(value) else 0.0
+                    # Only convert numeric values to float
+                    if pd.notna(value):
+                        try:
+                            test_result["metrics"][col] = float(value)
+                        except (ValueError, TypeError):
+                            # Skip non-numeric columns
+                            continue
+                    else:
+                        test_result["metrics"][col] = 0.0
             individual_results.append(test_result)
         
         # Calculate average metrics
         avg_metrics = {}
-        metric_columns = [col for col in result_df.columns 
-                         if col not in ["question", "answer", "contexts", "ground_truth", "user_input", "retrieved_contexts", "response"]]
+        metric_columns = []
         
-        for col in metric_columns:
-            values = result_df[col].dropna()
-            avg_metrics[col] = float(values.mean()) if len(values) > 0 else 0.0
+        # Only include numeric columns for averaging
+        for col in result_df.columns:
+            if col not in ["question", "answer", "contexts", "ground_truth", "user_input", "retrieved_contexts", "response"]:
+                # Check if column is numeric
+                if pd.api.types.is_numeric_dtype(result_df[col]):
+                    metric_columns.append(col)
+                    values = result_df[col].dropna()
+                    avg_metrics[col] = float(values.mean()) if len(values) > 0 else 0.0
         
         return {
             "individual_results": individual_results,

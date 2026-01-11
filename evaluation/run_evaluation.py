@@ -35,7 +35,9 @@ def run_evaluation(
     use_ground_truth_metrics: bool = False,
     llm_model: str = "gpt-3.5-turbo",
     output_dir: str = "evaluation/results",
-    num_test_cases: int = None
+    num_test_cases: int = None,
+    json_output_path: str = None,
+    csv_output_path: str = None
 ):
     """
     Run RAGAS evaluation on test dataset.
@@ -45,6 +47,11 @@ def run_evaluation(
         llm_model: OpenAI model to use for evaluation
         output_dir: Directory to save evaluation results
         num_test_cases: Number of test cases to evaluate (None = all)
+        json_output_path: Custom path for JSON output (overrides default naming)
+        csv_output_path: Custom path for CSV output (overrides default naming)
+        
+    Returns:
+        dict: Aggregate results with average scores for each metric
     """
     print("\n" + "="*70)
     print("FRAUD DETECTION CHATBOT - RAGAS EVALUATION")
@@ -124,7 +131,12 @@ def run_evaluation(
     
     # Save detailed results
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_file = os.path.join(output_dir, f"ragas_evaluation_{timestamp}.json")
+    
+    # Use custom paths if provided, otherwise use default naming
+    if json_output_path is None:
+        json_output_path = os.path.join(output_dir, f"ragas_evaluation_{timestamp}.json")
+    if csv_output_path is None:
+        csv_output_path = os.path.join(output_dir, f"ragas_summary_{timestamp}.csv")
     
     # Add metadata
     results["metadata"] = {
@@ -134,18 +146,18 @@ def run_evaluation(
         "num_test_cases": len(test_cases_with_answers)
     }
     
-    scorer.save_evaluation(results, output_file)
+    scorer.save_evaluation(results, json_output_path)
     
     # Also save a CSV summary for easy analysis
-    csv_file = os.path.join(output_dir, f"ragas_summary_{timestamp}.csv")
-    save_csv_summary(results, csv_file)
-    print(f"CSV summary saved to {csv_file}")
+    save_csv_summary(results, csv_output_path)
+    print(f"CSV summary saved to {csv_output_path}")
     
     print("\n" + "="*70)
     print("EVALUATION COMPLETE")
     print("="*70 + "\n")
     
-    return results
+    # Return aggregate results for comparison
+    return results.get("aggregate_results", {})
 
 
 def save_csv_summary(results: dict, output_path: str):

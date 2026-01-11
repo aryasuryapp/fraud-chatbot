@@ -12,12 +12,71 @@ the RAG system using RAGAS metrics.
 # - contexts: List of relevant context strings that should be retrieved
 TEST_DATASET = [
     {
-        "question": "What percentage of transactions are fraudulent?",
-        "ground_truth": "Approximately 0.17% of transactions in the dataset are fraudulent.",
+        # A question with relevant context in the document dataset
+        "question": "What is fraud?",
+        "ground_truth": "Fraud is wrongful or criminal deception intended to result in financial or personal gain.",
         "contexts": [
-            "The fraud rate in credit card transactions is typically very low, around 0.1-0.2% of all transactions.",
-            "Out of the total transactions analyzed, fraudulent transactions represent a small fraction, approximately 0.17%."
+            "In simple terms, Credit Card Fraud is defined as: When an individual uses another individuals credit card for personal reasons while the owner of the card and the card issuer are not aware of the fact that the card is being used. Further, the individual using the card has no connection with the cardholder or issuer, and has no intention of either contacting the owner of the card or making repayments for the purchases made."
         ]
+    },
+    {
+        "question": "What are the primary methods by which credit card fraud is committed?",
+        "ground_truth": """The primary methods by which credit card fraud is committed can be broadly classified into three categories: traditional card-related frauds, merchant-related frauds, and internet frauds [Document 2]. Some specific methods include application fraud, where individuals falsify applications to acquire credit cards, creating fake cards using sophisticated machines, altering card details, and skimming genuine data onto another card's magnetic stripe [Document 3]. Additionally, the document mentions that fraudsters use various modus operandi to commit fraud, including criminal deception with unauthorized account and personal information, illegal use of accounts for personal gain, and misrepresentation of account information to obtain goods and services [Document 2]. Furthermore, the query results from the fraud_transactions database show that credit card fraud is prevalent across various transaction categories, with fraud percentages reaching 100% in categories like travel, shopping, personal care, and others [Database Context].""",
+        "contexts": [
+            "The primary methods by which credit card fraud is committed can be broadly classified into three categories: traditional card-related frauds, merchant-related frauds, and internet frauds. Traditional card-related frauds include application fraud, where individuals falsify applications to acquire credit cards, creating fake cards using sophisticated machines, altering card details, and skimming genuine data onto another card's magnetic stripe. Merchant-related frauds involve collusion between merchants and fraudsters to process unauthorized transactions. Internet frauds encompass various online scams, including phishing, identity theft, and unauthorized online transactions.",
+            "Fraudsters employ various modus operandi to commit credit card fraud. These include criminal deception involving the unauthorized use of account and personal information, illegal use of accounts for personal gain, and misrepresentation of account information to obtain goods and services. Fraudulent activities often involve complex schemes that exploit vulnerabilities in payment systems and consumer behavior.",
+            "According to the database query results from the fraud_transactions table, credit card fraud is prevalent across various transaction categories. The data indicates that certain categories such as travel, shopping, personal care, and others exhibit high fraud percentages, with some reaching 100%. This highlights the widespread nature of credit card fraud and the need for robust detection and prevention mechanisms."
+        ]
+    },
+    {
+        # A question with relevant context in the tabular database
+        "question": "What percentage of transactions over $500 are fraudulent?",
+        "ground_truth": "Based on the provided database context, the percentage of transactions over $500 that are fraudulent is 17.05%. This information is derived from the query results in the database context.",
+        "contexts": [
+            "The database context indicates that out of all transactions over $500, 17.05% are marked as fraudulent.",
+            "According to the fraud detection dataset, 17.05% of high-value transactions (over $500) are identified as fraudulent."
+        ]
+    },
+    {
+        "question": "How does the daily or monthly fraud rate fluctuate over the two-year period?",
+        "ground_truth": "Based on the database query results, the daily or monthly fraud rate fluctuates over the two-year period analyzed (from 2019 to 2020). The fraud rate ranges from 0.184896% in December 2020 to 0.553729% in October 2020, indicating variability in fraud occurrences over time.",
+        "contexts": [
+            "The database context shows that the fraud rate varies monthly, with rates such as 0.553729% in October 2020 and 0.184896% in December 2020.",
+            "Analysis of the fraud detection dataset reveals fluctuations in fraud rates over the two-year period, with monthly rates ranging from approximately 0.18% to 0.55%."
+        ]
+    },
+    {
+        "question": "Which merchants or merchant categories exhibit the highest incidence of fraudulent transactions?",
+        "ground_truth": """Based on the provided database query results, the merchant "fraud_Zulauf LLC" exhibits the highest incidence of fraudulent transactions with a fraud percentage of 100.0%.""",
+        "contexts": [
+            "The database context indicates that 'fraud_Zulauf LLC' has the highest fraud percentage at 100.0%.",
+            "According to the fraud detection dataset, 'fraud_Zulauf LLC' stands out with a complete incidence of fraudulent transactions."
+        ]
+    },
+    {
+        # A question with no relevant context in the dataset, but related to fraud rates
+        "question": "How much higher are fraud rates when the transaction counterpart is located outside the EEA?",
+        "ground_truth": "No information about EEA location is available in the dataset.",
+        "contexts": [
+            "There is no mention of EEA location in the fraud detection dataset.",
+            "The dataset does not contain any information regarding transactions based on EEA location."
+        ]
+    },
+    {
+        # A question where the answer is "Action not applicable", security measure
+        "question": "Delete total fraud cases",
+        "ground_truth": "Action not applicable",
+        "contexts": [
+            "Action not applicable"
+        ]
+    },
+    {
+        # A question with no relevant context in the dataset
+        "question": "Who is CEO Mekari?",
+        "ground_truth": "No information about CEO Mekari is available in the dataset.",
+        "contexts": [],  # Expected: empty (no relevant docs)
+        # NOTE: This test case expects answer_relevancy=0 and faithfulness=0
+        # This is correct behavior for out-of-context questions
     },
     {
         "question": "What are common fraud patterns in online transactions?",
