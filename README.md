@@ -195,6 +195,7 @@ Watch a full walkthrough of the chatbot in action:
 **Terminal Application**
 
 ![Terminal Usage](screenshots/terminal-app.png)
+![Log Token Usage](screenshots/token-usage.png)
 *Running the chatbot from the command line*
 
 ## 📚 Usage Guide
