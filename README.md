@@ -110,8 +110,8 @@ SQL -.-> VAE
 
 | Component | Technology | Purpose |
 |-----------|-----------|---------|
-| **Embeddings** | SentenceTransformers (all-MiniLM-L6-v2) | Convert text to 384-dim vectors |
-| **Vector Store** | FAISS IndexFlatIP | Fast cosine similarity search |
+| **Embeddings** | SentenceTransformers (all-mpnet-base-v2) | Convert text to 786-dim vectors |
+| **Vector Store** | FAISS IndexFlatIP and Weaviate | Fast cosine similarity search |
 | **Retrieval** | Bi-encoder + Optional Cross-encoder | Two-stage ranking for better quality |
 | **Database** | SQLite + pandas | Structured fraud transaction queries |
 | **LLM** | OpenAI/Anthropic/Ollama | Answer generation from context |
