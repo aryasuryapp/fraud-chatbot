@@ -36,7 +36,7 @@ fraud-chatbot/
 └── README.md
 ```
 
-## � System Architecture Flow
+## 📊 System Architecture Flow
 
 The chatbot uses a **hybrid RAG architecture** that combines structured database queries with document retrieval for comprehensive answers.
 
@@ -118,24 +118,7 @@ SQL -.-> VAE
 | **UI** | Streamlit | Interactive chat interface |
 | **Evaluation** | RAGAS | Quality metrics (see [evaluation/README.md](evaluation/README.md)) |
 
-### ⚙️ Configuration Options
-
-**Retrieval Settings** (Environment Variables):
-- `USE_RERANKER=false` - Enable cross-encoder reranking (improves quality by 5-15%)
-- `RERANKER_MODEL=cross-encoder/ms-marco-MiniLM-L-6-v2` - Cross-encoder model
-- `INITIAL_RETRIEVAL_K=20` - Candidates for reranking
-- `MAX_CHUNKS=10` - Maximum chunks to use
-- `RELEVANCE_THRESHOLD=0.7` - Minimum similarity score
-
-**Chunking Settings**:
-- `CHUNK_SIZE=1000` - Characters per chunk
-- `CHUNK_OVERLAP=200` - Overlap between chunks
-
-**Model Settings**:
-- `EMBEDDING_MODEL=all-MiniLM-L6-v2` - Embedding model (384-dim)
-- Alternative: `all-mpnet-base-v2` (768-dim, higher quality)
-
-## �🚀 Quick Start
+## 🚀 Quick Start
 
 ### 1. Installation
 
@@ -244,48 +227,30 @@ result = qa.ask("What patterns indicate fraudulent transactions?")
 print(result["answer"])
 ```
 
-### Evaluation with RAGAS
-
-Evaluate the RAG system quality using RAGAS library:
-
-```python
-from llm.qa_chain import QAChain
-from evaluation.scorer import QAScorer
-
-# Initialize
-qa_chain = QAChain()
-scorer = QAScorer(use_ground_truth_metrics=False)
-
-# Get answer in RAGAS format
-result = qa_chain.ask_for_evaluation("What are fraud indicators?")
-
-# Evaluate
-metrics = scorer.evaluate_single(
-    question=result["question"],
-    answer=result["answer"],
-    contexts=result["contexts"]
-)
-
-print(f"Context Precision: {metrics['context_precision']:.3f}")
-print(f"Answer Relevancy: {metrics['answer_relevancy']:.3f}")
-print(f"Faithfulness: {metrics['faithfulness']:.3f}")
-```
-
-Run batch evaluation on test dataset:
-```bash
-python evaluation/run_evaluation.py
-```
-
-See [evaluation/README.md](evaluation/README.md) for complete documentation.
+For evaluation examples, see the [Testing & Evaluation](#-testing--evaluation) section below.
 
 ## 🔧 Configuration
+
+### Retrieval Settings
+
+Configure via environment variables:
+- `USE_RERANKER=false` - Enable cross-encoder reranking (improves quality by 5-15%)
+- `RERANKER_MODEL=cross-encoder/ms-marco-MiniLM-L-6-v2` - Cross-encoder model
+- `INITIAL_RETRIEVAL_K=20` - Candidates for reranking
+- `MAX_CHUNKS=10` - Maximum chunks to use
+- `RELEVANCE_THRESHOLD=0.7` - Minimum similarity score
+
+### Chunking Settings
+
+- `CHUNK_SIZE=1000` - Characters per chunk
+- `CHUNK_OVERLAP=200` - Overlap between chunks
 
 ### Embedding Models
 
 Default: `all-MiniLM-L6-v2` (384 dimensions)
 
 Alternatives in [rag/retriever.py](rag/retriever.py):
-- `all-mpnet-base-v2` (768 dimensions, better quality)
+- `EMBEDDING_MODEL=all-mpnet-base-v2` (768 dimensions, higher quality)
 - `paraphrase-MiniLM-L6-v2` (384 dimensions, faster)
 
 ### Vector Store
@@ -311,7 +276,9 @@ pip install faiss-gpu
 
 ## 🧪 Testing & Evaluation
 
-Run RAGAS evaluation on test dataset:
+Evaluate your RAG system quality using the RAGAS framework.
+
+### Running Evaluations
 
 ```bash
 # Quick evaluation with default settings
@@ -324,7 +291,33 @@ python evaluation/example.py
 python evaluation/run_evaluation.py --with-ground-truth --model gpt-4
 ```
 
-**RAGAS Metrics:**
+### Evaluation Example
+
+```python
+from llm.qa_chain import QAChain
+from evaluation.scorer import QAScorer
+
+# Initialize
+qa_chain = QAChain()
+scorer = QAScorer(use_ground_truth_metrics=False)
+
+# Get answer in RAGAS format
+result = qa_chain.ask_for_evaluation("What are fraud indicators?")
+
+# Evaluate
+metrics = scorer.evaluate_single(
+    question=result["question"],
+    answer=result["answer"],
+    contexts=result["contexts"]
+)
+
+print(f"Context Precision: {metrics['context_precision']:.3f}")
+print(f"Answer Relevancy: {metrics['answer_relevancy']:.3f}")
+print(f"Faithfulness: {metrics['faithfulness']:.3f}")
+```
+
+### RAGAS Metrics
+
 - **context_precision**: Relevance of retrieved contexts
 - **answer_relevancy**: Question-answer alignment  
 - **faithfulness**: Answer grounded in context
@@ -332,10 +325,6 @@ python evaluation/run_evaluation.py --with-ground-truth --model gpt-4
 - **answer_correctness**: Semantic similarity to expected answer (requires ground truth)
 
 See [evaluation/README.md](evaluation/README.md) for detailed evaluation guide.
-
-Metrics included:
-- **Relevance**: Answer relevance to question
-- **Faithfulness**: Answer grounded in context
 
 ## 🛠️ Development
 
