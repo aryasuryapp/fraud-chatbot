@@ -36,7 +36,106 @@ fraud-chatbot/
 └── README.md
 ```
 
-## 🚀 Quick Start
+## � System Architecture Flow
+
+The chatbot uses a **hybrid RAG architecture** that combines structured database queries with document retrieval for comprehensive answers.
+
+```mermaid
+graph TD
+
+%% Data Ingestion Group
+subgraph Ingestion [Data Ingestion]
+    SI([Start Ingestion]) --> CSV[CSV File]
+    SI --> PDF[PDF Documents]
+    
+    CSV --> LTS[Load Table Script]
+    LTS --> SQL[(SQLite Database)]
+    
+    PDF --> LDS[Load Documents Script]
+    LDS --> ECT[Extract and Clean Text]
+    ECT --> SC[Semantic Chunking]
+    SC --> GE[Generate Embeddings]
+    GE --> SV[Store Vectors]
+    SV --> FI[(FAISS Index)]
+end
+
+%% Query Processing Group
+subgraph QueryProc [Query Processing]
+    SQ([Start Query]) --> UQ[User Question]
+    UQ --> QAC[QA Chain]
+    QAC --> PCE{Parallel Context Extraction}
+
+    %% Document Retrieval Path
+    subgraph DocPath [Document Retrieval Path]
+        PCE --> DR[Document Retrieval]
+        DR --> ENQ[Encode Query]
+        ENQ --> FS[FAISS Search]
+        FS --> UR{Use Reranker?}
+        UR -- No --> FBT[Filter by Threshold]
+        UR -- Yes --> CER[Cross Encoder Reranking]
+        CER --> FBT
+        FBT --> DC[Document Context]
+    end
+
+    %% Database Query Path
+    subgraph DBPath [Database Query Path]
+        PCE --> DBQ[Database Query]
+        DBQ --> AS[Aggregate Stats]
+        AS --> NSQ{Needs Specific Query?}
+        NSQ -- Yes --> GSQL[Generate SQL]
+        NSQ -- No --> DCSO[DB Context Stats Only]
+        GSQL --> VAE[Validate and Execute]
+        VAE --> DCSQ[DB Context Stats and Query]
+    end
+
+    %% Final Generation
+    MC[Merge Contexts]
+    DC --> MC
+    DCSO --> MC
+    DCSQ --> MC
+    
+    MC --> BUP[Build Unified Prompt]
+    BUP --> LLM[LLM Generation]
+    LLM --> RS[Response and Sources]
+    RS --> DUI[Display in UI]
+end
+
+%% Data Dependencies (Dotted Lines)
+FI -.-> FS
+SQL -.-> AS
+SQL -.-> VAE
+```
+
+### 🔑 Key Components
+
+| Component | Technology | Purpose |
+|-----------|-----------|---------|
+| **Embeddings** | SentenceTransformers (all-MiniLM-L6-v2) | Convert text to 384-dim vectors |
+| **Vector Store** | FAISS IndexFlatIP | Fast cosine similarity search |
+| **Retrieval** | Bi-encoder + Optional Cross-encoder | Two-stage ranking for better quality |
+| **Database** | SQLite + pandas | Structured fraud transaction queries |
+| **LLM** | OpenAI/Anthropic/Ollama | Answer generation from context |
+| **UI** | Streamlit | Interactive chat interface |
+| **Evaluation** | RAGAS | Quality metrics (see [evaluation/README.md](evaluation/README.md)) |
+
+### ⚙️ Configuration Options
+
+**Retrieval Settings** (Environment Variables):
+- `USE_RERANKER=false` - Enable cross-encoder reranking (improves quality by 5-15%)
+- `RERANKER_MODEL=cross-encoder/ms-marco-MiniLM-L-6-v2` - Cross-encoder model
+- `INITIAL_RETRIEVAL_K=20` - Candidates for reranking
+- `MAX_CHUNKS=10` - Maximum chunks to use
+- `RELEVANCE_THRESHOLD=0.7` - Minimum similarity score
+
+**Chunking Settings**:
+- `CHUNK_SIZE=1000` - Characters per chunk
+- `CHUNK_OVERLAP=200` - Overlap between chunks
+
+**Model Settings**:
+- `EMBEDDING_MODEL=all-MiniLM-L6-v2` - Embedding model (384-dim)
+- Alternative: `all-mpnet-base-v2` (768-dim, higher quality)
+
+## �🚀 Quick Start
 
 ### 1. Installation
 
