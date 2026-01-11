@@ -378,6 +378,87 @@ Key libraries:
 
 See [requirements.txt](requirements.txt) for complete list.
 
+## 🚀 Future Improvements
+
+This project is continuously evolving. Here are planned enhancements for upcoming iterations:
+
+### 🗣️ Conversation Management
+- [ ] **Conversation State Persistence**
+  - Implement session management to maintain chat history across page refreshes
+  - Add conversation memory to enable follow-up questions and context-aware responses
+  - Store conversation threads in SQLite for later review and analysis
+
+### 📊 Enhanced Evaluation Pipeline
+- [ ] **Automated A/B Testing Framework**
+  - Compare different retrieval strategies (with/without reranking, different chunk sizes)
+  - Benchmark multiple LLM providers (OpenAI, Anthropic, local models)
+  - Generate comparative reports with statistical significance tests
+
+- [ ] **Continuous Monitoring**
+  - Log all queries and responses for quality tracking
+  - Create dashboard for tracking metrics over time (answer quality, latency)
+
+- [ ] **Expanded Test Dataset**
+  - Grow the evaluation dataset from 10 to 100+ diverse questions
+  - Cover edge cases and domain-specific fraud scenarios
+  - Add adversarial questions to test robustness
+
+### 🔍 Advanced RAG Features
+- [ ] **Hybrid Search**
+  - Combine semantic search with BM25/keyword search for better recall
+  - Implement query expansion and reformulation
+  - Add metadata filtering (date ranges, transaction amounts, fraud types)
+
+### 🛡️ Security & Reliability
+- [ ] **Input Validation & Sanitization**
+  - Implement SQL injection protection for dynamic queries
+  - Add rate limiting to prevent abuse
+  - Sanitize user inputs before passing to LLM
+
+- [ ] **Error Handling & Fallbacks**
+  - Graceful degradation when vector store or database is unavailable
+  - Retry logic for API failures with exponential backoff
+  - Better error messages with actionable suggestions
+
+### ⚡ Performance Optimization
+- [ ] **Caching Layer**
+  - Cache frequent queries and their responses
+  - Implement semantic similarity caching (return cached results for similar questions)
+  - Add Redis for distributed caching in production
+
+- [ ] **Asynchronous Processing**
+  - Make retrieval and LLM calls asynchronous for parallel execution
+  - Implement background job queue for batch processing
+  - Add progress indicators for long-running operations
+
+### 🏗️ Infrastructure
+- [ ] **Containerization & Deployment**
+  - Create Docker Compose setup for easy deployment
+  - Add Kubernetes manifests for scalable production deployment
+  - Implement CI/CD pipeline with automated testing
+
+- [ ] **Observability**
+  - Add OpenTelemetry instrumentation for distributed tracing
+  - Implement structured logging with correlation IDs
+  - Create Grafana dashboards for system health monitoring
+
+### 🤖 Model Improvements
+- [ ] **Fine-tuning**
+  - Fine-tune embedding models on fraud-specific terminology
+  - Create domain-adapted LLM for better fraud detection insights
+  - Experiment with smaller, specialized models for faster inference
+
+- [ ] **Ensemble Approaches**
+  - Combine multiple retrieval methods and rank fusion
+  - Use multiple LLMs and aggregate their responses
+  - Implement confidence scoring and uncertainty quantification
+
+---
+
+**Priority Order:** Conversation state → Enhanced evaluation → Hybrid search → Caching
+
+Contributions and suggestions for these improvements are welcome! See the [Contributing](#-contributing) section below.
+
 ## 🤝 Contributing
 
 Contributions welcome! Please:
