@@ -3,10 +3,21 @@ Load PDF documents, chunk them, and create embeddings for RAG.
 """
 
 import os
+import re
 from pathlib import Path
 from typing import List
 import pickle
 from dotenv import load_dotenv
+
+
+def clean_text(text):
+    # Remove excessive whitespace
+    text = re.sub(r'\s+', ' ', text)
+    # Remove page numbers/headers
+    text = re.sub(r'Page \d+', '', text)
+    # Normalize unicode
+    text = text.encode('ascii', 'ignore').decode()
+    return text.strip()
 
 
 def load_pdf_documents(pdf_dir: str) -> List[str]:
@@ -40,6 +51,7 @@ def load_pdf_documents(pdf_dir: str) -> List[str]:
         for page in reader.pages:
             text += page.extract_text() + "\n"
         
+        text = clean_text(text)
         documents.append(text)
         print(f"  Extracted {len(text)} characters")
     
