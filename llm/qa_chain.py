@@ -8,6 +8,7 @@ import pandas as pd
 import os
 import logging
 import uuid
+import time
 from dotenv import load_dotenv
 from rag.retriever import Retriever
 
@@ -43,6 +44,37 @@ def setup_logger(name: str) -> logging.Logger:
     return logger
 
 logger = setup_logger(__name__)
+
+
+# Token pricing per 1K tokens (USD)
+MODEL_PRICING = {
+    "gpt-3.5-turbo": {"input": 0.0015, "output": 0.002},
+    "gpt-4": {"input": 0.03, "output": 0.06},
+    "gpt-4-turbo-preview": {"input": 0.01, "output": 0.03},
+    "claude-3-opus-20240229": {"input": 0.015, "output": 0.075},
+    "claude-3-sonnet-20240229": {"input": 0.003, "output": 0.015},
+    "claude-3-haiku-20240307": {"input": 0.00025, "output": 0.00125},
+}
+
+
+def calculate_cost(model_name: str, input_tokens: int, output_tokens: int) -> float:
+    """Calculate cost for LLM API call based on token usage.
+    
+    Args:
+        model_name: Name of the model used
+        input_tokens: Number of input/prompt tokens
+        output_tokens: Number of output/completion tokens
+        
+    Returns:
+        Cost in USD
+    """
+    if model_name not in MODEL_PRICING:
+        logger.debug(f"No pricing info for model {model_name}, returning 0")
+        return 0.0
+    
+    pricing = MODEL_PRICING[model_name]
+    cost = (input_tokens * pricing["input"] + output_tokens * pricing["output"]) / 1000
+    return cost
 
 
 class QAChain:
@@ -145,8 +177,12 @@ class QAChain:
         
         return any(keyword in question_lower for keyword in specific_keywords)
     
-    def _generate_sql_query(self, question: str, schema: str, request_id: str = None) -> str:
-        """Use LLM to generate SQL query from natural language question with temperature=0 for consistency."""
+    def _generate_sql_query(self, question: str, schema: str, request_id: str = None) -> tuple[str, dict]:
+        """Use LLM to generate SQL query from natural language question with temperature=0 for consistency.
+        
+        Returns:
+            Tuple of (sql_query, usage_dict) where usage_dict contains tokens and cost
+        """
         prompt = f"""Given this SQLite database schema:
 {schema}
 
@@ -167,6 +203,7 @@ IMPORTANT Requirements:
 SQL Query:"""
         
         log_prefix = f"[{request_id}] " if request_id else ""
+        usage_info = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "cost": 0.0}
         
         try:
             # Use temperature=0 for deterministic SQL generation
@@ -181,6 +218,18 @@ SQL Query:"""
                     max_tokens=300
                 )
                 query = response.choices[0].message.content.strip()
+                
+                # Extract token usage from OpenAI response
+                if hasattr(response, 'usage') and response.usage:
+                    usage_info["input_tokens"] = response.usage.prompt_tokens
+                    usage_info["output_tokens"] = response.usage.completion_tokens
+                    usage_info["total_tokens"] = response.usage.total_tokens
+                    usage_info["cost"] = calculate_cost(
+                        self.model_name,
+                        response.usage.prompt_tokens,
+                        response.usage.completion_tokens
+                    )
+                    
             elif self.llm_provider == "anthropic":
                 message = self.llm.messages.create(
                     model=self.model_name,
@@ -189,9 +238,24 @@ SQL Query:"""
                     messages=[{"role": "user", "content": prompt}]
                 )
                 query = message.content[0].text.strip()
+                
+                # Extract token usage from Anthropic response
+                if hasattr(message, 'usage') and message.usage:
+                    usage_info["input_tokens"] = message.usage.input_tokens
+                    usage_info["output_tokens"] = message.usage.output_tokens
+                    usage_info["total_tokens"] = message.usage.input_tokens + message.usage.output_tokens
+                    usage_info["cost"] = calculate_cost(
+                        self.model_name,
+                        message.usage.input_tokens,
+                        message.usage.output_tokens
+                    )
+                    
             else:
                 # Fallback to _call_llm for other providers
-                query = self._call_llm(prompt, request_id).strip()
+                result = self._call_llm(prompt, request_id)
+                query = result["answer"].strip() if isinstance(result, dict) else result.strip()
+                if isinstance(result, dict) and "usage" in result:
+                    usage_info = result["usage"]
             
             # Clean up common formatting issues
             query = query.replace('```sql', '').replace('```', '').strip()
@@ -216,10 +280,10 @@ SQL Query:"""
                 query += ' LIMIT 100'
             
             logger.debug(f"{log_prefix}Generated SQL query: {query}")
-            return query
+            return query, usage_info
         except Exception as e:
             logger.error(f"{log_prefix}Error generating SQL query: {e}")
-            return f"SELECT * FROM fraud_transactions LIMIT 100 -- Error generating query: {e}"
+            return f"SELECT * FROM fraud_transactions LIMIT 100 -- Error generating query: {e}", usage_info
     
     def _is_safe_query(self, query: str) -> bool:
         """Validate SQL query to prevent SQL injection and dangerous operations."""
@@ -283,7 +347,11 @@ Dataset Statistics:
                 logger.debug(f"{log_prefix}Generating SQL query for specific data...")
                 
                 # Generate SQL query using LLM
-                sql_query = self._generate_sql_query(query, schema[0], request_id)
+                sql_query, sql_usage = self._generate_sql_query(query, schema[0], request_id)
+                
+                # Store SQL usage in context for later aggregation (pass back via special marker)
+                if hasattr(self, '_current_sql_usage'):
+                    self._current_sql_usage = sql_usage
                 
                 # Validate query for security
                 if self._is_safe_query(sql_query):
@@ -338,9 +406,23 @@ Dataset Statistics:
         Answer:"""
         return prompt
     
-    def _call_llm(self, prompt: str, request_id: str = None) -> str:
-        """Call LLM with prompt."""
+    def _call_llm(self, prompt: str, request_id: str = None) -> dict:
+        """Call LLM with prompt and return answer with token usage.
+        
+        Returns:
+            Dict with 'answer' and 'usage' (tokens and cost)
+        """
         log_prefix = f"[{request_id}] " if request_id else ""
+        result = {
+            "answer": "",
+            "usage": {
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "total_tokens": 0,
+                "cost": 0.0
+            }
+        }
+        
         if self.llm_provider == "openai":
             try:
                 # Log the prompt in a pretty, readable format
@@ -360,9 +442,23 @@ Dataset Statistics:
                     temperature=0.7,
                     max_tokens=500
                 )
-                return response.choices[0].message.content
+                result["answer"] = response.choices[0].message.content
+                
+                # Extract token usage
+                if hasattr(response, 'usage') and response.usage:
+                    result["usage"]["input_tokens"] = response.usage.prompt_tokens
+                    result["usage"]["output_tokens"] = response.usage.completion_tokens
+                    result["usage"]["total_tokens"] = response.usage.total_tokens
+                    result["usage"]["cost"] = calculate_cost(
+                        self.model_name,
+                        response.usage.prompt_tokens,
+                        response.usage.completion_tokens
+                    )
+                    
+                return result
             except Exception as e:
-                return f"Error calling OpenAI: {str(e)}"
+                result["answer"] = f"Error calling OpenAI: {str(e)}"
+                return result
         
         elif self.llm_provider == "anthropic":
             try:
@@ -371,9 +467,23 @@ Dataset Statistics:
                     max_tokens=500,
                     messages=[{"role": "user", "content": prompt}]
                 )
-                return message.content[0].text
+                result["answer"] = message.content[0].text
+                
+                # Extract token usage
+                if hasattr(message, 'usage') and message.usage:
+                    result["usage"]["input_tokens"] = message.usage.input_tokens
+                    result["usage"]["output_tokens"] = message.usage.output_tokens
+                    result["usage"]["total_tokens"] = message.usage.input_tokens + message.usage.output_tokens
+                    result["usage"]["cost"] = calculate_cost(
+                        self.model_name,
+                        message.usage.input_tokens,
+                        message.usage.output_tokens
+                    )
+                    
+                return result
             except Exception as e:
-                return f"Error calling Anthropic: {str(e)}"
+                result["answer"] = f"Error calling Anthropic: {str(e)}"
+                return result
         
         elif self.llm_provider == "ollama":
             try:
@@ -386,11 +496,15 @@ Dataset Statistics:
                         "stream": False
                     }
                 )
-                return response.json().get("response", "No response from Ollama")
+                result["answer"] = response.json().get("response", "No response from Ollama")
+                # Note: Ollama doesn't provide token/cost info for local models
+                return result
             except Exception as e:
-                return f"Error calling Ollama: {str(e)}"
+                result["answer"] = f"Error calling Ollama: {str(e)}"
+                return result
         
-        return "LLM not initialized"
+        result["answer"] = "LLM not initialized"
+        return result
     
     def ask(self, question: str, max_chunks: int = None, relevance_threshold: float = None) -> dict:
         """
@@ -402,11 +516,25 @@ Dataset Statistics:
             relevance_threshold: Minimum similarity score to include chunk (default: from env or 0.7)
             
         Returns:
-            Dictionary with answer and sources
+            Dictionary with answer, sources, and performance metrics
         """
+        # Start timing
+        start_time = time.perf_counter()
+        
         # Generate unique request ID for tracking
         request_id = str(uuid.uuid4())[:8]
         logger.info(f"[{request_id}] Processing question: {question}")
+        
+        # Initialize usage tracking
+        total_usage = {
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "total_tokens": 0,
+            "cost": 0.0,
+            "sql_generation": {"tokens": 0, "cost": 0.0},
+            "answer_generation": {"tokens": 0, "cost": 0.0}
+        }
+        self._current_sql_usage = None
         
         # Use instance defaults from env if not specified
         if max_chunks is None:
@@ -415,6 +543,7 @@ Dataset Statistics:
             relevance_threshold = self.relevance_threshold
         
         # Retrieve relevant documents (if vector store is available)
+        retrieval_start = time.perf_counter()
         sources = []
         if self.has_vector_store:
             # Retrieve top candidates
@@ -456,14 +585,53 @@ Dataset Statistics:
         else:
             doc_context = "No document embeddings available. Answering based on database context only."
         
-        # Get database context
+        retrieval_time = (time.perf_counter() - retrieval_start) * 1000  # Convert to ms
+        
+        # Get database context (this may include SQL generation)
+        db_start = time.perf_counter()
         db_context = self._get_db_context(question, request_id)
+        db_time = (time.perf_counter() - db_start) * 1000  # Convert to ms
+        
+        # Capture SQL generation usage if it occurred
+        if self._current_sql_usage:
+            total_usage["sql_generation"]["tokens"] = self._current_sql_usage["total_tokens"]
+            total_usage["sql_generation"]["cost"] = self._current_sql_usage["cost"]
+            total_usage["input_tokens"] += self._current_sql_usage["input_tokens"]
+            total_usage["output_tokens"] += self._current_sql_usage["output_tokens"]
+            total_usage["total_tokens"] += self._current_sql_usage["total_tokens"]
+            total_usage["cost"] += self._current_sql_usage["cost"]
         
         # Build prompt
         prompt = self._build_prompt(question, doc_context, db_context)
         
         # Get answer from LLM
-        answer = self._call_llm(prompt, request_id)
+        llm_start = time.perf_counter()
+        llm_result = self._call_llm(prompt, request_id)
+        llm_time = (time.perf_counter() - llm_start) * 1000  # Convert to ms
+        
+        answer = llm_result["answer"]
+        
+        # Aggregate answer generation usage
+        if "usage" in llm_result:
+            usage = llm_result["usage"]
+            total_usage["answer_generation"]["tokens"] = usage["total_tokens"]
+            total_usage["answer_generation"]["cost"] = usage["cost"]
+            total_usage["input_tokens"] += usage["input_tokens"]
+            total_usage["output_tokens"] += usage["output_tokens"]
+            total_usage["total_tokens"] += usage["total_tokens"]
+            total_usage["cost"] += usage["cost"]
+        
+        # Calculate total latency
+        total_time = (time.perf_counter() - start_time) * 1000  # Convert to ms
+        
+        # Log comprehensive metrics
+        logger.info(
+            f"[{request_id}] Completed | "
+            f"Latency: {total_time:.0f}ms (retrieval: {retrieval_time:.0f}ms, db: {db_time:.0f}ms, llm: {llm_time:.0f}ms) | "
+            f"Tokens: {total_usage['total_tokens']} (in: {total_usage['input_tokens']}, out: {total_usage['output_tokens']}) | "
+            f"Cost: ${total_usage['cost']:.6f} | "
+            f"Model: {self.model_name}"
+        )
         
         return {
             "question": question,
@@ -472,7 +640,17 @@ Dataset Statistics:
             "db_context": db_context,
             "num_chunks_used": len(sources),
             "relevance_threshold": relevance_threshold,
-            "request_id": request_id
+            "request_id": request_id,
+            "metrics": {
+                "latency_ms": total_time,
+                "latency_breakdown": {
+                    "retrieval_ms": retrieval_time,
+                    "database_ms": db_time,
+                    "llm_ms": llm_time
+                },
+                "tokens": total_usage,
+                "model": self.model_name
+            }
         }
     
     def ask_for_evaluation(self, question: str, max_chunks: int = None, relevance_threshold: float = None) -> dict:
