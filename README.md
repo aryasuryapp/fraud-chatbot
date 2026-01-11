@@ -177,6 +177,26 @@ streamlit run ui/app.py
 
 Access the chatbot at `http://localhost:8501`
 
+## Demo & Screenshots
+
+### 🎥 Video Demonstration
+
+Watch a full walkthrough of the chatbot in action:
+
+[![Fraud Chatbot Demo](https://img.shields.io/badge/▶️_Watch_Demo-Video-red?style=for-the-badge)](https://jam.dev/c/ac01280a-7c37-4e6d-82fa-797614fe2560)
+
+### 🖥️ Application Screenshots
+
+**Streamlit Web Interface**
+
+![Streamlit App Interface](screenshots/interface-app.png)
+*Interactive chat interface with fraud detection Q&A capabilities*
+
+**Terminal Application**
+
+![Terminal Usage](screenshots/terminal-app.png)
+*Running the chatbot from the command line*
+
 ## 📚 Usage Guide
 
 ### Data Ingestion
